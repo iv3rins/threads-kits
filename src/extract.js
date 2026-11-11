@@ -517,10 +517,18 @@
   /**
    * 找出「同作者串文」：主帖下方连续的、作者相同的帖子。
    *
-   * Threads 的串文在 DOM 上是多个独立的 data-pressable-container，
-   * 靠同作者 + 紧随其后 + 不是别人的回复来判定。
-   * 返回 [主帖, 续帖...]；不是串文就只返回 [主帖]。
+   * 光看「同作者 + 紧随其后」不够 —— 在个人主页上整页都是同一个作者，
+   * 那样会把 4 条互不相干的帖子当成一条串文合并（踩过的 bug）。
+   *
+   * 真正的串文（1/2、2/2）是作者**连续写完**的，发布时间彼此非常接近；
+   * 主页上的独立帖则相隔数小时到数天。所以加时间近邻判据。
+   *
+   * 同时要求：两条帖子之间不能夹着回复区（Threads 会插在中间）。
    */
+  // 真串文的时间窗口。实测：同一次写作的两段相差 3-4 分钟；
+  // 主页独立帖至少相差数小时。取 30 分钟留足余量。
+  const THREAD_TIME_WINDOW_MS = 30 * 60 * 1000;
+
   TS.extractThread = function (container) {
     const main = TS.extractPost(container);
     if (!main) return [];
@@ -529,18 +537,35 @@
     const idx = all.indexOf(container);
     if (idx < 0) return [main];
 
+    // 主帖发布时间（毫秒）。拿不到时间就无法判断，保守地当作单帖。
+    const mainTime = main.time && main.time.iso ? Date.parse(main.time.iso) : NaN;
+    if (!isFinite(mainTime)) return [main];
+
     const chain = [main];
+    let prevTime = mainTime;
+
     for (let i = idx + 1; i < all.length; i++) {
       const el = all[i];
-      // 中间隔了别的元素就不再算串文（Threads 会把回复区插在中间）
       const next = TS.extractPost(el);
       if (!next) break;
+
+      // 1) 必须同作者
       if (next.author.handle !== main.author.handle) break;
-      // 只收同作者的续帖；有实质正文才算
+
+      // 2) 必须有实质内容
       if (!next.text && !next.media.length) break;
+
+      // 3) 时间必须靠近「上一条」，而不是靠近主帖 ——
+      //    串文是一路写下去的，逐条邻近即可，不必都贴近第一条。
+      const t = next.time && next.time.iso ? Date.parse(next.time.iso) : NaN;
+      if (!isFinite(t)) break;
+      if (Math.abs(t - prevTime) > THREAD_TIME_WINDOW_MS) break;
+
       chain.push(next);
+      prevTime = t;
       if (chain.length >= 8) break; // 防御：避免把整个时间线吃进来
     }
+
     return chain;
   };
 

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Threshare",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "把 Threads 帖子重绘成 X 风格分享卡片；点图标打开 420×900 竖窗，自动出手机版布局。",
   "minimum_chrome_version": "116",
   "host_permissions": ["https://www.threads.com/*", "https://www.threads.net/*"],
