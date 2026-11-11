@@ -1,0 +1,26 @@
+{
+  "name": "threshare",
+  "version": "0.4.1",
+  "description": "把 Threads 帖子重绘成 X 风格分享卡片，附手机版刷帖小窗",
+  "private": true,
+  "scripts": {
+    "serve": "node dev-server.js 8788",
+    "test": "node tests/verify-manifest.js && node tests/verify-qr.js && node tests/verify-qr-hole.js && node tests/verify-thread-media.js",
+    "test:e2e": "node tests/e2e-extension.js && node tests/e2e-media.js && node tests/e2e-popup.js",
+    "icons": "node tools/make-icons-browser.js",
+    "shots": "node tools/make-readme-shots.js"
+  },
+  "keywords": [
+    "chrome-extension",
+    "threads",
+    "screenshot",
+    "share-card"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "jsqr": "^1.4.0",
+    "playwright-core": "^1.65.0",
+    "pngjs": "^7.0.0",
+    "qrcode": "^1.5.4"
+  }
+}

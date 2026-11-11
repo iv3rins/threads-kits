@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Threshare · 详情页污染回归</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; padding:20px; background:#0B0D10; color:#E7E9EA;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  h1 { font-size:14px; font-weight:700; margin:0 0 6px; }
+  .sub { font-size:12px; color:#71767B; margin-bottom:14px; }
+  #report { background:#15181C; border-radius:12px; padding:14px; margin-bottom:16px;
+    font-family: ui-monospace, Consolas, monospace; font-size:12px; line-height:1.7; white-space:pre-wrap; }
+  .ok { color:#00BA7C; } .bad { color:#F4212E; } .warn { color:#FFD400; }
+  #stage { display:flex; gap:20px; flex-wrap:wrap; }
+  #stage canvas { display:block; max-width:340px; height:auto; border-radius:12px; }
+
+  /* 模拟 Threads 帖子详情页的真实结构（简化但保留关键语义） */
+  #fixture { width:520px; font-size:14px; line-height:1.5; background:#fff; color:#000; }
+  .row { display:flex; gap:8px; align-items:center; }
+  .avatar { width:36px; height:36px; border-radius:50%; background:#ddd; }
+  .btn { display:inline-block; padding:2px 6px; }
+</style>
+</head>
+<body>
+<h1>Threshare · 详情页 UI 污染回归</h1>
+<div class="sub">
+  复现要点：帖子详情页里，主容器同时装有「排序栏 / 查看动态 / 回复输入框」，
+  正文提取不能把它们当正文。夹具按真实结构最小化重建。
+</div>
+<div id="report">loading…</div>
+<div id="stage"></div>
+
+<!-- 真实结构模拟：主帖容器内含帖子本身 + 页面级控件 + 回复列表 -->
+<div id="fixture">
+  <div data-pressable-container="true" data-fixture="detail">
+    <div>
+      <!-- 头部 -->
+      <div class="row">
+        <div><img alt="demo_user的头像" class="avatar" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></div>
+        <div>
+          <a href="/@demo_user"><span dir="auto">demo_user</span></a>
+          <a href="/@demo_user/post/DfkZ90EEmEX"><time datetime="2026-11-11T01:00:00.000Z"><span>11小时</span></time></a>
+        </div>
+        <div role="button" aria-haspopup="menu"><svg><title>更多</title></svg></div>
+      </div>
+
+      <!-- 正文 -->
+      <div>
+        <div>
+          <span dir="auto">卧槽我这种天天待在家里玩手机打电脑 不主动去加群找人聊天 偶尔去俱乐部耍 但是也不主动交流的人 该怎么认识新朋友和新男孩？</span>
+        </div>
+      </div>
+
+      <!-- 操作栏 -->
+      <div>
+        <div role="button" aria-label="赞 25"><svg><title>赞</title></svg><span dir="auto">25</span></div>
+        <div role="button" aria-label="回复 15"><svg><title>评论</title></svg><span dir="auto">15</span></div>
+        <div role="button" aria-label="转发"><svg><title>转发</title></svg></div>
+        <div role="button" aria-label="分享"><svg><title>分享</title></svg></div>
+      </div>
+
+      <!-- ★ 页面级控件：这些曾经被当成正文 -->
+      <div role="button" aria-haspopup="menu">排序 热门 更多</div>
+      <div role="button">查看动态 查看动态</div>
+      <div role="button">回复demo_user...</div>
+
+      <!-- 回复输入框 -->
+      <div contenteditable="true" role="textbox">文本栏为空白。请输入内容，撰写新帖子。</div>
+      <div role="button">附加影音内容</div>
+
+      <!-- 回复列表（每条自己也是容器，但在主容器内部也可能出现文本） -->
+      <div>
+        <div>
+          <span dir="auto">club</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../src/util.js"></script>
+<script src="../src/extract.js"></script>
+<script src="../src/qrcode.js"></script>
+<script src="../src/render.js"></script>
+<script>
+const lines = [];
+const log = (s, cls) => { lines.push(cls ? `<span class="${cls}">${s}</span>` : s);
+  document.getElementById('report').innerHTML = lines.join('\n'); };
+
+const FORBIDDEN = ['排序', '热门', '查看动态', '回复demo_user', '附加影音', '文本栏为空白'];
+
+(async () => {
+  try {
+    const cont = document.querySelector('[data-fixture="detail"]');
+    const post = TS.extractPost(cont);
+    if (!post) throw new Error('extractPost 返回 null');
+
+    log(`正文 ${post.text.length} 字：`);
+    log('  ' + post.text.replace(/\n/g, ' ⏎ '));
+
+    // 断言 1：正文必须包含真正的内容
+    const hasReal = /卧槽我这种天天待在家里/.test(post.text);
+    log(`含真实正文: ${hasReal}`, hasReal ? 'ok' : 'bad');
+
+    // 断言 2：不能混入页面 UI
+    const leaked = FORBIDDEN.filter((w) => post.text.includes(w));
+    log(`混入 UI 词: ${leaked.length ? leaked.join(', ') : '无'}`, leaked.length ? 'bad' : 'ok');
+
+    // 断言 3：计数
+    log(`计数 赞${post.counts.like} 评${post.counts.reply}`,
+      post.counts.like === 25 && post.counts.reply === 15 ? 'ok' : 'bad');
+
+    // 断言 4：头像（alt 语义）
+    log(`头像 alt: ${post.author.avatarAlt}`, /的头像$/.test(post.author.avatarAlt) ? 'ok' : 'bad');
+
+    // 渲染出来看
+    const { canvas } = TS.renderPost(post, null, { avatar: null, media: [] }, 2);
+    document.getElementById('stage').appendChild(canvas);
+    log(`渲染 ${canvas.width}x${canvas.height}`, 'ok');
+
+    // 顺带验二维码
+    const qrOk = !!(TS.qrMatrix && TS.qrMatrix(post.permalink));
+    log(`二维码可生成: ${qrOk}`, qrOk ? 'ok' : 'bad');
+
+    const allOk = hasReal && leaked.length === 0 && qrOk;
+    log('\n' + (allOk ? '✓ 全部通过' : '✗ 存在失败项'), allOk ? 'ok' : 'bad');
+    window.__DETAIL__ = { ok: allOk, text: post.text, leaked, counts: post.counts, permalink: post.permalink };
+  } catch (err) {
+    log('✗ ' + err.message + '\n' + err.stack, 'bad');
+    window.__DETAIL__ = { ok: false, error: err.message };
+  }
+})();
+</script>
+</body>
+</html>

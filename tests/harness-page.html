@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Threshare · 全链路 harness</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; padding:20px; background:#0B0D10; color:#E7E9EA;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  h1 { font-size:14px; font-weight:700; margin:0 0 12px; }
+  #report { background:#15181C; border-radius:12px; padding:14px; margin-bottom:16px;
+    font-family: ui-monospace, Consolas, monospace; font-size:12px; line-height:1.7;
+    white-space:pre-wrap; }
+  .ok { color:#00BA7C; } .bad { color:#F4212E; }
+  #fixtureWrap { background:#fff; border-radius:12px; padding:8px; }
+</style>
+</head>
+<body>
+<h1>Threshare · 全链路 harness（真实 DOM 夹具 + 真实 content.js）</h1>
+<div id="report">loading…</div>
+<div id="fixtureWrap"></div>
+
+<script>
+const lines = [];
+const log = (s, cls) => lines.push(cls ? `<span class="${cls}">${s}</span>` : s);
+const flush = () => { document.getElementById('report').innerHTML = lines.join('\n'); };
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('load failed: ' + src));
+    document.head.appendChild(s);
+  });
+}
+
+(async () => {
+  try {
+    const res = await fetch('./dumps/post-page-1.html');
+    if (!res.ok) throw new Error('夹具缺失 tests/dumps/post-page-1.html');
+    const html = await res.text();
+    const wrap = document.getElementById('fixtureWrap');
+    wrap.innerHTML = html;
+    log('✓ 夹具载入 ' + html.length + ' bytes', 'ok');
+
+    // 按 manifest 的顺序注入，和真实 content script 完全一致
+    for (const f of ['../src/util.js', '../src/extract.js', '../src/qrcode.js', '../src/render.js', '../src/content.js']) {
+      await loadScript(f);
+    }
+    log('✓ 四个脚本按 manifest 顺序注入完成', 'ok');
+
+    // 等 MutationObserver 的防抖扫描
+    await new Promise((r) => setTimeout(r, 600));
+
+    const containers = document.querySelectorAll('[data-pressable-container]');
+    const buttons = document.querySelectorAll('.threshare-btn');
+    log(`容器数=${containers.length} 挂载按钮数=${buttons.length}`,
+      buttons.length === containers.length && containers.length > 0 ? 'ok' : 'bad');
+
+    // 按钮位置：应紧跟 Threads 原生「分享」按钮之后
+    const firstRow = TS.actionRow(containers[0]);
+    const nativeShare = [...firstRow.querySelectorAll('svg')]
+      .find((s) => (s.querySelector('title') || {}).textContent === '分享');
+    const nativeWrap = nativeShare.closest('[role="button"]');
+    const inserted = nativeWrap.nextElementSibling;
+    log('按钮插在原生分享按钮之后：' + (inserted && inserted.classList.contains('threshare-btn')),
+      inserted && inserted.classList.contains('threshare-btn') ? 'ok' : 'bad');
+
+    // 触发点击，验证弹层与渲染全链路
+    const btn = buttons[0];
+    btn.click();
+    await new Promise((r) => setTimeout(r, 1500));
+
+    const host = document.getElementById('threshare-overlay-host');
+    const shadow = host && host.shadowRoot;
+    const canvas = shadow && shadow.querySelector('canvas');
+    log('弹层已创建：' + !!host, host ? 'ok' : 'bad');
+    log('画布已渲染：' + (canvas ? canvas.width + 'x' + canvas.height : '无'),
+      canvas ? 'ok' : 'bad');
+
+    let pngBytes = 0;
+    let parseErr = null;
+    if (canvas) {
+      try {
+        const dataUrl = canvas.toDataURL('image/png');
+        pngBytes = dataUrl.length;
+        // 关键：canvas 是否被跨域图片污染 —— 污染则 toDataURL 抛异常
+        log('toDataURL 成功，未污染 canvas（可导出）：' + dataUrl.slice(0, 22) + '…', 'ok');
+        window.__TS_PNG__ = dataUrl;
+      } catch (e) {
+        parseErr = e.message;
+        log('✗ canvas 被污染，无法导出：' + e.message, 'bad');
+      }
+    }
+
+    window.__TS_FULL__ = {
+      ok: true,
+      containers: containers.length,
+      buttons: buttons.length,
+      canvas: canvas ? { w: canvas.width, h: canvas.height } : null,
+      pngBytes,
+      parseErr,
+      post: TS.extractPost(containers[0]),
+    };
+  } catch (err) {
+    log('✗ ' + err.message, 'bad');
+    window.__TS_FULL__ = { ok: false, error: err.message };
+  }
+  flush();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "Threshare",
+  "version": "0.4.1",
+  "description": "把 Threads 帖子重绘成 X 风格分享卡片；点图标打开 420×900 竖窗，自动出手机版布局。",
+  "minimum_chrome_version": "116",
+  "host_permissions": ["https://www.threads.com/*", "https://www.threads.net/*"],
+  "permissions": ["clipboardWrite", "storage", "tabs"],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "action": {
+    "default_title": "Threshare · 打开手机版 Threads 小窗",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.threads.com/*", "https://www.threads.net/*"],
+      "js": ["src/util.js", "src/extract.js", "src/qrcode.js", "src/render.js", "src/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/*.js", "src/*.css"],
+      "matches": ["https://www.threads.com/*", "https://www.threads.net/*"]
+    }
+  ]
+}

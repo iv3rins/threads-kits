@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Threshare · emoji 与正文提取回归</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; padding:20px; background:#0B0D10; color:#E7E9EA;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  h1 { font-size:14px; font-weight:700; margin:0 0 12px; }
+  #report { background:#15181C; border-radius:12px; padding:14px; margin-bottom:16px;
+    font-family: ui-monospace, Consolas, monospace; font-size:12px; line-height:1.7; white-space:pre-wrap; }
+  .ok { color:#00BA7C; } .bad { color:#F4212E; } .warn { color:#FFD400; }
+  #stage { display:flex; gap:20px; flex-wrap:wrap; }
+  #stage canvas { display:block; max-width:340px; height:auto; border-radius:12px; }
+  #fixture { display:none; }
+</style>
+</head>
+<body>
+<h1>Threshare · emoji 与正文提取回归</h1>
+<div id="report">loading…</div>
+<div id="stage"></div>
+<div id="fixture"></div>
+
+<script src="../src/util.js"></script>
+<script src="../src/extract.js"></script>
+<script src="../src/qrcode.js"></script>
+<script src="../src/render.js"></script>
+<script>
+const lines = [];
+const log = (s, cls) => { lines.push(cls ? `<span class="${cls}">${s}</span>` : s);
+  document.getElementById('report').innerHTML = lines.join('\n'); };
+const results = [];
+
+(async () => {
+  try {
+    const res = await fetch('./dumps/post-emoji.html');
+    if (!res.ok) throw new Error('夹具缺失 post-emoji.html');
+    const raw = await res.text();
+    const holder = document.getElementById('fixture');
+    holder.innerHTML = raw.split('<!--SPLIT-->').map((h) => `<div>${h}</div>`).join('');
+    const posts = TS.extractAll(holder);
+    log(`夹具 ${raw.length} bytes，检出 ${posts.length} 条帖子`, posts.length ? 'ok' : 'bad');
+
+    for (let i = 0; i < posts.length; i++) {
+      const p = posts[i].data;
+      const mediaKinds = p.media.map((m) => (m.src.includes('giphy') ? 'GIPHY(错!)' : 'photo'));
+      const badMedia = mediaKinds.some((k) => k.includes('错'));
+
+      log(`\n── 帖子 ${i + 1} @${p.author.handle} ──`);
+      log(`  正文 ${p.text.length} 字: ${p.text.slice(0, 70).replace(/\n/g, ' / ')}`,
+        p.text.length > 0 ? 'ok' : 'bad');
+      log(`  媒体 ${p.media.length} 个 [${mediaKinds.join(', ')}]`, badMedia ? 'bad' : 'ok');
+      log(`  计数 赞${p.counts.like} 评${p.counts.reply} 转${p.counts.repost}`,
+        (p.counts.like + p.counts.reply + p.counts.repost) > 0 ? 'ok' : 'warn');
+      if (badMedia) log('  ✗ emoji/贴纸被当成媒体了', 'bad');
+
+      const images = {
+        avatar: await TS.resolveImage(p.author.avatarSrc, p.author.avatarEl),
+        media: await TS.loadImages(p.media.map((m) => m.src), 4, p.media.map((m) => m.el)),
+      };
+      const avatarMode = images.avatar
+        ? (images.avatar === p.author.avatarEl ? 'reused(page element)' : 'network')
+        : 'MISSING';
+      log(`  头像: ${avatarMode}`, images.avatar ? 'ok' : 'warn');
+
+      const { canvas } = TS.renderPost(p, null, images, 2);
+      document.getElementById('stage').appendChild(canvas);
+
+      results.push({
+        handle: p.author.handle,
+        textLen: p.text.length,
+        mediaCount: p.media.length,
+        mediaKinds,
+        badMedia,
+        avatarMode,
+        counts: p.counts,
+      });
+    }
+
+    const allOk = results.every((r) => r.textLen > 0 && !r.badMedia);
+    log('\n' + (allOk ? '✓ 每条都有正文且无 emoji 混入媒体' : '✗ 存在失败项'),
+      allOk ? 'ok' : 'bad');
+
+    window.__EMOJI__ = {
+      ok: allOk,
+      results,
+      canvases: [...document.querySelectorAll('#stage canvas')].map((c) => ({ w: c.width, h: c.height })),
+    };
+  } catch (err) {
+    log('✗ ' + err.message + '\n' + err.stack, 'bad');
+    window.__EMOJI__ = { ok: false, error: err.message };
+  }
+})();
+</script>
+</body>
+</html>

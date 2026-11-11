@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Threshare · harness</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; padding:24px; background:#0B0D10; color:#E7E9EA;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  h1 { font-size:15px; font-weight:700; letter-spacing:.4px; margin:0 0 4px; }
+  .sub { font-size:12px; color:#71767B; margin-bottom:18px; }
+  .row { display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start; }
+  .panel { flex:1 1 420px; min-width:320px; }
+  .panel h2 { font-size:12px; text-transform:uppercase; letter-spacing:1px;
+    color:#71767B; margin:0 0 8px; font-weight:700; }
+  #stage { background:#15181C; border-radius:16px; padding:16px; min-height:200px;
+    display:flex; justify-content:center; }
+  #stage canvas { display:block; max-width:100%; height:auto; border-radius:16px; }
+  #json { background:#15181C; border-radius:16px; padding:14px;
+    font-family: ui-monospace, Consolas, monospace; font-size:12px; line-height:1.6;
+    white-space:pre-wrap; word-break:break-word; max-height:520px; overflow:auto; }
+  .err { color:#F4212E; }
+  .ok { color:#00BA7C; }
+  .k { color:#1D9BF0; }
+  button { background:#E7E9EA; color:#0F1419; border:0; border-radius:999px;
+    padding:8px 14px; font-weight:700; font-size:13px; cursor:pointer; font-family:inherit; }
+</style>
+</head>
+<body>
+<h1>Threshare · 渲染 harness</h1>
+<div class="sub">用真实 Threads DOM 夹具验证 extract + render，不依赖线上页面。</div>
+<div class="row">
+  <div class="panel">
+    <h2>卡片输出</h2>
+    <div id="stage"></div>
+  </div>
+  <div class="panel">
+    <h2>提取结果</h2>
+    <div id="json">…</div>
+  </div>
+</div>
+
+<script src="../src/util.js"></script>
+<script src="../src/extract.js"></script>
+<script src="../src/qrcode.js"></script>
+<script src="../src/render.js"></script>
+<script>
+(async () => {
+  const jsonEl = document.getElementById('json');
+  const stage = document.getElementById('stage');
+  const log = (obj) => { jsonEl.textContent = JSON.stringify(obj, null, 2); };
+  try {
+    const res = await fetch('./dumps/post-page-1.html');
+    if (!res.ok) throw new Error('夹具缺失：先抓 tests/dumps/post-page-1.html');
+    const html = await res.text();
+    const holder = document.createElement('div');
+    holder.innerHTML = html;
+    document.body.appendChild(holder);
+    holder.style.display = 'none';
+
+    const posts = TS.extractAll(holder);
+    if (!posts.length) throw new Error('没有提取到帖子');
+    const post = posts[0].data;
+
+    const images = {
+      avatar: await TS.loadImage(post.author.avatarSrc),
+      media: await Promise.all((post.media || []).map((m) => TS.loadImage(m.src))),
+    };
+    const plan = TS.Renderer.layout(post, null, images);
+    const canvas = document.createElement('canvas');
+    TS.Renderer.paint(canvas, plan, 2);
+    stage.appendChild(canvas);
+
+    log({
+      status: 'ok',
+      postCount: posts.length,
+      card: { w: plan.width, h: plan.height, px: canvas.width + 'x' + canvas.height },
+      avatarLoaded: !!images.avatar,
+      mediaLoaded: images.media.map(Boolean),
+      post,
+    });
+    window.__TS_RESULT__ = { ok: true, plan: { width: plan.width, height: plan.height }, post, canvas };
+  } catch (err) {
+    stage.innerHTML = '<div class="err">渲染失败：' + err.message + '</div>';
+    log({ status: 'error', message: err.message, stack: err.stack });
+    window.__TS_RESULT__ = { ok: false, error: err.message };
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Threshare · 多图/串文 harness</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; padding:20px; background:#0B0D10; color:#E7E9EA;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  h1 { font-size:14px; font-weight:700; margin:0 0 12px; }
+  #report { background:#15181C; border-radius:12px; padding:14px; margin-bottom:16px;
+    font-family: ui-monospace, Consolas, monospace; font-size:12px; line-height:1.7;
+    white-space:pre-wrap; }
+  .ok { color:#00BA7C; } .bad { color:#F4212E; } .warn { color:#FFD400; }
+  #stage { background:#15181C; border-radius:12px; padding:16px; display:flex;
+    gap:20px; flex-wrap:wrap; justify-content:center; }
+  #stage canvas { display:block; max-width:100%; height:auto; border-radius:12px; }
+  #fixtureWrap { display:none; }
+</style>
+</head>
+<body>
+<h1>Threshare · 多图 / 串文 harness</h1>
+<div id="report">loading…</div>
+<div id="stage"></div>
+<div id="fixtureWrap"></div>
+
+<script src="../src/util.js"></script>
+<script src="../src/extract.js"></script>
+<script src="../src/qrcode.js"></script>
+<script src="../src/render.js"></script>
+<script>
+const lines = [];
+const log = (s, cls) => { lines.push(cls ? `<span class="${cls}">${s}</span>` : s);
+  document.getElementById('report').innerHTML = lines.join('\n'); };
+
+(async () => {
+  try {
+    const res = await fetch('./dumps/post-images-thread.html');
+    if (!res.ok) throw new Error('夹具缺失 tests/dumps/post-images-thread.html');
+    const raw = await res.text();
+    const wrap = document.getElementById('fixtureWrap');
+    wrap.innerHTML = raw.split('<!--SPLIT-->').map((h) => `<div data-role="holder">${h}</div>`).join('');
+    log(`✓ 夹具载入 ${raw.length} bytes，帖子数=${wrap.querySelectorAll('[data-pressable-container]').length}`, 'ok');
+
+    const posts = TS.extractAll(wrap);
+    log(`提取到帖子数: ${posts.length}`, posts.length ? 'ok' : 'bad');
+
+    const out = [];
+    for (let i = 0; i < posts.length; i++) {
+      const p = posts[i].data;
+      log(`\n── 帖子 ${i + 1} ──`);
+      log(`  作者: @${p.author.handle} (${p.author.displayName})`);
+      log(`  正文(${p.text.length}字): ${p.text.slice(0, 100).replace(/\n/g, ' ⏎ ')}`);
+      log(`  媒体数: ${p.media.length}`, p.media.length ? 'ok' : 'warn');
+      p.media.forEach((m, k) => log(`    [${k}] ${m.type} ${m.w}x${m.h} ${m.src.slice(0, 60)}…`));
+      log(`  计数: 赞${p.counts.like} 评${p.counts.reply} 转${p.counts.repost}`);
+      log(`  链接: ${p.permalink}`);
+
+      const images = {
+        avatar: await TS.loadImage(p.author.avatarSrc),
+        media: await TS.loadImages(p.media.map((m) => m.src), 4),
+      };
+      log(`  图片加载: 头像=${!!images.avatar} 媒体=${images.media.map(Boolean).join(',')}`,
+        images.avatar ? 'ok' : 'warn');
+
+      const { canvas, plan } = TS.renderPost(p, null, images, 2);
+      canvas.dataset.idx = String(i);
+      document.getElementById('stage').appendChild(canvas);
+      log(`  渲染: ${plan.width}x${plan.height} css → ${canvas.width}x${canvas.height} px`, 'ok');
+    }
+
+    // ── 串文合并：主帖 + 同作者续帖 → 一张卡 ──
+    log(`\n── 串文合并测试 ──`);
+    const thread = TS.extractThread(posts[0].el);
+    log(`  extractThread 返回 ${thread.length} 段`,
+      thread.length > 1 ? 'ok' : 'warn');
+    thread.forEach((t, k) => log(`    [${k}] ${t.text.slice(0, 50).replace(/\n/g, ' ⏎ ')}`));
+
+    const tImages = {
+      avatar: await TS.loadImage(thread[0].author.avatarSrc),
+      media: await TS.loadImages(thread[0].media.map((m) => m.src), 4),
+    };
+    const merged = TS.renderPost(thread[0], null, tImages, 2, thread);
+    merged.canvas.dataset.merged = '1';
+    document.getElementById('stage').appendChild(merged.canvas);
+    log(`  合并卡片: ${merged.plan.width}x${merged.plan.height} css → ${merged.canvas.width}x${merged.canvas.height} px`, 'ok');
+
+    // ── 跨段媒体合并：整串的图都要出现（最多 4 格 + N）──
+    const allMedia = TS.collectThreadMedia(thread);
+    const totalMedia = thread.reduce((n, s) => n + s.media.length, 0);
+    log(`\n── 跨段媒体 ──`);
+    log(`  各段媒体数: [${thread.map((s) => s.media.length).join(', ')}]  合计 ${totalMedia}`);
+    log(`  collectThreadMedia 去重后: ${allMedia.length}`, allMedia.length === totalMedia ? 'ok' : 'warn');
+
+    if (allMedia.length) {
+      const crossImages = {
+        avatar: await TS.resolveImage(thread[0].author.avatarSrc, thread[0].author.avatarEl),
+        media: await TS.loadImages(allMedia.map((m) => m.src), 4, allMedia.map((m) => m.el)),
+        mediaList: allMedia,
+      };
+      const cross = TS.renderPost(thread[0], null, crossImages, 2, thread);
+      cross.canvas.dataset.cross = '1';
+      document.getElementById('stage').appendChild(cross.canvas);
+      const cells = cross.plan.ops.filter((o) => o.kind === 'image').length;
+      const badge = cross.plan.ops.find((o) => o.kind === 'badge');
+      log(`  跨段卡片: 画 ${cells} 格, 角标 ${badge ? badge.text : '(无)'}`,
+        cells === Math.min(allMedia.length, 4) ? 'ok' : 'bad');
+    }
+
+    window.__MULTI__ = { ok: true, count: posts.length,
+      posts: posts.map((x) => x.data),
+      thread,
+      canvases: [...document.querySelectorAll('#stage canvas')].map((c) => ({ w: c.width, h: c.height, merged: c.dataset.merged === '1' })) };
+    log(`\n全部渲染完成`, 'ok');
+  } catch (err) {
+    log('✗ ' + err.message + '\n' + err.stack, 'bad');
+    window.__MULTI__ = { ok: false, error: err.message };
+  }
+})();
+</script>
+</body>
+</html>
