@@ -8,7 +8,9 @@
     "test": "node tests/verify-manifest.js && node tests/verify-qr.js && node tests/verify-qr-hole.js && node tests/verify-thread-media.js",
     "test:e2e": "node tests/e2e-extension.js && node tests/e2e-media.js && node tests/e2e-popup.js",
     "icons": "node tools/make-icons-browser.js",
-    "shots": "node tools/make-readme-shots.js"
+    "shots": "node tools/make-readme-shots.js",
+    "pack": "node tools/pack-extension.js",
+    "test:zip": "node tests/verify-zip-loadable.js"
   },
   "keywords": [
     "chrome-extension",
