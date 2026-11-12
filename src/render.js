@@ -352,16 +352,23 @@
     y += 1;
 
     // —— 统计行 ——
+    //
+    // 三个指标**始终显示**，包括 0。
+    // 之前用 `if (c.reply)` 只显示非零项，导致互动为 0 的帖子
+    // 整行消失，看起来像"功能坏了"（踩过）。
+    // Threads 原生的表现也是常驻显示，0 就写 0。
     const statY = y + 26;
     const statSpec = F.stat;
     const numSpec = F.statNum;
     const statMeasure = textMeasure(statSpec);
     const numMeasure = textMeasure(numSpec);
-    const stats = [];
     const c = post.counts || {};
-    if (c.reply) stats.push([TS.formatCount(c.reply), '回复']);
-    if (c.repost) stats.push([TS.formatCount(c.repost), '转发']);
-    if (c.like) stats.push([TS.formatCount(c.like), '喜欢']);
+
+    const stats = [
+      [TS.formatCount(c.reply) || '0', '回复'],
+      [TS.formatCount(c.repost) || '0', '转发'],
+      [TS.formatCount(c.like) || '0', '喜欢'],
+    ];
 
     let sx = P;
     for (const [num, label] of stats) {

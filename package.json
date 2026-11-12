@@ -1,6 +1,6 @@
 {
   "name": "threshare",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "把 Threads 帖子重绘成 X 风格分享卡片，附手机版刷帖小窗",
   "private": true,
   "scripts": {

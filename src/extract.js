@@ -341,17 +341,22 @@
   }
 
   /**
-   * 操作栏：包含 赞 与 评论 图标的一行。
+   * 操作栏：包含 赞 与 回复/评论 图标的一行。
+   *
    * 注意要取「同时含多个按钮的 flex 行」，而不是单个按钮子树 ——
-   * 单按钮里也可能有图标，但只有整行才同时具备 赞+评论+转发+分享。
+   * 单按钮里也可能有图标，但只有整行才同时具备 赞+回复+转发+分享。
+   *
+   * Threads 会把「评论」改叫「回复」（2026-11 实测），
+   * 所以两种叫法都要认，否则整行匹配不到、计数全丢。
    */
   function actionRow(container) {
+    const LIKE_RE = /赞|喜欢|like/i;
+    const REPLY_RE = /回复|评论|reply|comment/i;
     const candidates = [...container.querySelectorAll('div')].filter((d) => {
-      const svgs = [...d.querySelectorAll('svg')];
-      const titles = svgs.map(svgTitle);
-      const hasLike = titles.some((t) => /赞|喜欢/.test(t));
-      const hasComment = titles.some((t) => /评论/.test(t));
-      if (!hasLike || !hasComment) return false;
+      const titles = [...d.querySelectorAll('svg')].map(svgTitle);
+      const hasLike = titles.some((t) => LIKE_RE.test(t));
+      const hasReply = titles.some((t) => REPLY_RE.test(t));
+      if (!hasLike || !hasReply) return false;
       // 必须是「一排按钮」：至少 3 个 role=button 直接或近似直接挂着
       return d.querySelectorAll('[role="button"]').length >= 3;
     });
@@ -375,18 +380,19 @@
       const label = (btn.getAttribute('aria-label') || '') + ' ' + title;
       // skipSelf:false —— 按钮自身就是 role=button，要读它里面的数字
       const numText = visibleText(btn);
-      return { label, count: TS.parseCount(numText) };
+      return { label, raw: numText, count: TS.parseCount(numText) };
     });
 
     const pick = (re) => {
       const hit = items.find((x) => re.test(x.label));
       return hit ? hit.count : 0;
     };
+    // 「回复」是 Threads 2026-11 起的叫法，旧版叫「评论」，两者都认
     return {
-      like: pick(/赞|喜欢/),
-      reply: pick(/评论/),
-      repost: pick(/转发|引用/),
-      share: pick(/分享/),
+      like: pick(/赞|喜欢|like/i),
+      reply: pick(/回复|评论|reply|comment/i),
+      repost: pick(/转发|引用|repost|rethread/i),
+      share: pick(/分享|share/i),
     };
   }
 
